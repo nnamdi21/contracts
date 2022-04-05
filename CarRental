@@ -1,0 +1,105 @@
+// SPDX-License-Identifier: GPL-3.0
+pragma solidity ^0.4.21;
+
+contract CarRental {
+    address internal currentUser = 0xF12677A38bF8E0A525Ced46E6184549aaB7c4592;
+    bool internal isCarAvailable;
+    uint internal initialServiceCharge = 2; //minimum payment for the first 1h
+    uint internal serviceChargePerHour = 1;
+    uint internal defaultInterestRate = 3;
+    uint internal timeOfRent;
+
+    struct DefaultMap {  
+        uint amount;
+        uint time;
+    }
+
+    mapping(address => DefaultMap) internal defaulters;
+
+    constructor() public payable {
+        isCarAvailable = true;
+        require(msg.value == initialServiceCharge, "Insufficient funds to rent car!");
+    }
+
+    modifier isDefaulter() {
+        //Defaulters can not use service
+        require(defaulters[msg.sender].amount == 0, "Defaulters can not use service!");
+        _;
+    }
+
+    modifier isDebtPayable() {
+        //Check if for debt by user; if any
+        require(defaulters[msg.sender].amount != 0, "You currently do not owe this company!");
+        _;
+    }
+
+    modifier carAvailable() {    
+        //Check if car is free to be rented
+        require(isCarAvailable == true, "Car is currently in use!");
+        _;
+    }
+
+    modifier isCurrentUser() {    
+        //check if this is the current occupier of the car
+        require(msg.sender == currentUser, "You have to rent the car first!");
+        _;    
+    }
+
+    function rentCar() public isDefaulter carAvailable{
+        currentUser = msg.sender;
+        timeOfRent = block.timestamp;
+        isCarAvailable = false;
+    }
+
+    function endService() public payable isCurrentUser {
+        isCarAvailable = true;
+        currentUser = 0x092478753660b162CE2371b084244E7086853a9b;  
+
+        uint totalCharge = initialServiceCharge;
+        uint timeUsedInHours = (block.timestamp - timeOfRent) / 3600;
+        if (timeUsedInHours > 1) {
+           totalCharge = ((timeUsedInHours - 1) * serviceChargePerHour) + initialServiceCharge;
+        }
+
+        uint amount = msg.value;
+        if (amount < totalCharge) {            
+            msg.sender.transfer(amount);
+            defaulters[msg.sender] = DefaultMap(totalCharge - amount, block.timestamp);             
+
+        } else {
+            msg.sender.transfer(totalCharge);            
+        }        
+    }
+
+    function calcDebt() public view isDebtPayable returns (uint) {
+        uint principalDebt = (defaulters[msg.sender]).amount;
+        uint debtPeriodInDays = (block.timestamp - (defaulters[msg.sender]).time) / 86400;
+        if (debtPeriodInDays == 0) {
+            debtPeriodInDays = 1;
+        }        
+        uint totalDebt = principalDebt + (principalDebt * defaultInterestRate * debtPeriodInDays) / (100 * 365);
+
+        return totalDebt;
+    }
+
+    function payDebt() public payable isDebtPayable {
+        uint amountOwed = this.calcDebt();
+        uint amount = msg.value;
+        if (amount < amountOwed) {
+            msg.sender.transfer(amount);
+            defaulters[msg.sender] = DefaultMap(amountOwed - amount, block.timestamp);             
+
+        } else {
+           msg.sender.transfer(amountOwed);           
+        }        
+    }
+
+    function getChargeableTime() public view isCurrentUser returns(uint) {
+        uint timeUsedInHours = (block.timestamp - timeOfRent) / 3600;      
+        if (timeUsedInHours == 0) {
+            timeUsedInHours = 1;
+        }
+
+        return timeUsedInHours;
+    }
+}
