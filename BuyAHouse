@@ -145,8 +145,7 @@ contract BuyAHouse {
             }
 
         } else {
-            msg.sender.transfer(maxBidMade);
-            bidders = [];
+            msg.sender.transfer(maxBidMade);            
             return "Congratulations! You are a new house owner.";
         }     
     }
