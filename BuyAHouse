@@ -56,10 +56,8 @@ contract BuyAHouse {
     }
 
     modifier paymentDeadline() {    
-        //you can buy the house after 24hrs of making a bid
-        // uint time = biddersMap[msg.sender].time;
-        // uint days = ((biddersMap[msg.sender].time) - block.timestamp) / 86400;
-        require(((biddersMap[msg.sender].time) - block.timestamp) / 86400 >= 1, "Payment can only be made after 24hrs"); 
+        //you can buy the house after 24hrs of making a bid        
+        require((block.timestamp - (biddersMap[msg.sender].time)) / 86400 >= 1, "Payment can only be made after 24hrs"); 
         _;
     }
 
