@@ -1,0 +1,153 @@
+// SPDX-License-Identifier: GPL-3.0
+pragma solidity ^0.4.21;
+
+contract BuyAHouse {
+    uint initialOffer = 2;
+    uint cancelCharge = 1;
+    uint maxBidMade;
+
+    struct Bid {
+        address _address;
+        uint amount;
+        uint time;
+        bool status;
+    }
+
+    struct BidMap {    
+        uint amount;
+        uint time;
+    }
+
+    Bid[] internal bidders;
+    mapping(address => BidMap) internal biddersMap;
+    mapping(address => uint) internal defaulters;
+    
+    modifier isDefaulter() {
+        //Defaulters can not bid to buy house
+        require(defaulters[msg.sender] < 3, "Defaulters can not bid to buy house!");
+        _;
+    }
+
+    modifier hasFunds() {
+        //First check if the EOA has enough funds to initiate a bid    
+        if (maxBidMade < initialOffer) {
+            maxBidMade = initialOffer;
+        }
+
+        require(msg.value >= maxBidMade, "Insufficient funds to make a bid!");
+        _;
+    }
+
+    modifier isDuplicate() {    
+        //Ensure there are no multiple bids from a single source
+        require(biddersMap[msg.sender].amount == 0, "A bid has already been submitted!");
+        _;
+    }
+
+    modifier isBidMade() {    
+        //Ensure there are no multiple bids from a single source
+        require(biddersMap[msg.sender].amount != 0, "You are yet to make a bid for this house!");
+        _;
+    }
+
+    modifier cancelDeadline() {        
+        require(msg.value >= cancelCharge, "Insufficient funds to cancel bid!");
+        _;
+    }
+
+    modifier paymentDeadline() {    
+        require(((biddersMap[msg.sender].time) - block.timestamp) / 86400 >= 1, "Payment can only be made after 24hrs"); 
+        _;
+    }
+
+    modifier isHighestBidder() {    
+        //check if this is the highest bidder
+        require(biddersMap[msg.sender].amount == maxBidMade, "Your bid failed. Use the ChangeBid option to increase your bid!");
+        _;    
+    }
+
+    function makeABid() public isDefaulter hasFunds isDuplicate {
+        if (msg.value > maxBidMade) {
+             maxBidMade = msg.value;
+        }
+
+        bidders.push(Bid(msg.sender, msg.value, block.timestamp, true));
+        biddersMap[msg.sender] = BidMap(msg.value, block.timestamp);
+    }
+
+    function changeBid() public isBidMade hasFunds {
+        if (msg.value > maxBidMade) {
+             maxBidMade = msg.value;
+        }
+
+        for (uint i=0; i<bidders.length; i++) {
+            if (bidders[i]._address == msg.sender) {
+                bidders[i].amount = msg.value;
+                biddersMap[msg.sender] = BidMap(msg.value, bidders[i].time);
+                return;
+            }
+        }
+    }
+
+    function cancelBid() public payable isBidMade cancelDeadline {
+        for (uint i=0; i<bidders.length; i++) {
+            if (bidders[i]._address == msg.sender) {
+                bidders[i].status = false;
+                delete biddersMap[msg.sender];
+                msg.sender.transfer(cancelCharge);
+
+                //update maxBidMade 
+                if (maxBidMade == bidders[i].amount) {
+                    maxBidMade = initialOffer;
+                    for (uint j=0; j<bidders.length; j++) {
+                        if (bidders[j].status == true && bidders[j].amount > maxBidMade) {
+                            maxBidMade = bidders[j].amount;
+                        }
+                    }
+                }
+
+                return;
+            }
+        }
+    }
+
+    function getBiddingRate() public view returns (uint) {     
+        if (maxBidMade < initialOffer) {
+            return initialOffer;
+        }
+
+        return maxBidMade;
+    }
+
+    function makePayment() public payable isBidMade isHighestBidder paymentDeadline returns (string memory) {            
+        if (msg.value < maxBidMade)  {
+            if (defaulters[msg.sender] < 3) {
+                defaulters[msg.sender] += 1; 
+                return "Insufficient funds to make payment! Credit score likely affected.";
+
+            } else {
+                for (uint i=0; i<bidders.length; i++) {
+                    if (bidders[i]._address == msg.sender) {
+                        bidders[i].status = false;
+                        delete biddersMap[msg.sender];
+                        
+                        //update maxBidMade 
+                        maxBidMade = initialOffer;
+                        for (uint j=0; j<bidders.length; j++) {
+                            if (bidders[j].status == true && bidders[j].amount > maxBidMade) {
+                                maxBidMade = bidders[i].amount;
+                            }
+                        }
+
+                        return "You have defaulted due to insufficient funds! You can no longer make payment for this house.";
+                    }
+                }                    
+            }
+
+        } else {
+            msg.sender.transfer(maxBidMade);
+            bidders = [];
+            return "Congratulations! You are a new house owner.";
+        }     
+    }
+}
