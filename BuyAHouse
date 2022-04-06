@@ -120,11 +120,10 @@ contract BuyAHouse {
         return maxBidMade;
     }
 
-    function makePayment() public payable isBidMade isHighestBidder paymentDeadline returns (string memory) {            
+    function makePayment() public payable isBidMade isHighestBidder paymentDeadline {            
         if (msg.value < maxBidMade)  {
             if (defaulters[msg.sender] < 3) {
-                defaulters[msg.sender] += 1; 
-                return "Insufficient funds to make payment! Credit score likely affected.";
+                defaulters[msg.sender] += 1;                 
 
             } else {
                 for (uint i=0; i<bidders.length; i++) {
@@ -138,16 +137,13 @@ contract BuyAHouse {
                             if (bidders[j].status == true && bidders[j].amount > maxBidMade) {
                                 maxBidMade = bidders[i].amount;
                             }
-                        }
-
-                        return "You have defaulted due to insufficient funds! You can no longer make payment for this house.";
+                        }                        
                     }
                 }                    
             }
 
         } else {
-            msg.sender.transfer(maxBidMade);            
-            return "Congratulations! You are a new house owner.";
+            msg.sender.transfer(maxBidMade);                        
         }     
     }
 }
