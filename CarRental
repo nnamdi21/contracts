@@ -2,7 +2,7 @@
 pragma solidity ^0.4.21;
 
 contract CarRental {
-    address internal currentUser = 0xF12677A38bF8E0A525Ced46E6184549aaB7c4592;
+    address internal currentUser = 0xF12677A38bF8E0A525Ced46E6184549aaB7c4592; //set default address
     bool internal isCarAvailable;
     uint internal initialServiceCharge = 2; //minimum payment for the first 1h
     uint internal serviceChargePerHour = 1;
@@ -53,7 +53,7 @@ contract CarRental {
 
     function endService() public payable isCurrentUser {
         isCarAvailable = true;
-        currentUser = 0x092478753660b162CE2371b084244E7086853a9b;  
+        currentUser = 0xF12677A38bF8E0A525Ced46E6184549aaB7c4592;  
 
         uint totalCharge = initialServiceCharge;
         uint timeUsedInHours = (block.timestamp - timeOfRent) / 3600;
