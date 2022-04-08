@@ -1,0 +1,302 @@
+// SPDX-License-Identifier: GPL-3.0
+pragma solidity ^0.4.21;
+
+contract BankingService {
+    //All amounts in wei
+    uint minSavingsBalance = 2000000000000000000;   // 2 ether
+    uint minChequingBalance = 1000000000000000000;  // 1 ether
+    uint savingsInterestPerAnnum = 1;   // 1% p.a
+    uint monthlyServiceCharge = 1000000000000000000; //1 ether 
+    uint loanInterestPerAnnum = 3;   // 3% p.a
+    uint defaultDeadline = 30; // interest-free repayment days
+
+    struct Account {        
+        uint amount;
+        uint time;        
+    }
+
+    struct Loan {        
+        uint amount;
+        uint time;
+        uint maturity;            
+    }
+
+    mapping(address => Account) internal savingsAccountHolders;
+    mapping(address => Account) internal chequingAccountHolders;
+    mapping(address => Loan) internal loanReceivers;
+    mapping(address => uint) internal defaulters;
+
+    //Savings account
+    modifier canOpenSavingsWithBal() {
+        //Savings account can not have zero-balance
+        require(msg.value >= minSavingsBalance, "You do not have minimum funds to open account!");
+        _;
+    }
+
+    modifier savingsDuplicate() {
+        //Only one savings account at a time
+        require(savingsAccountHolders[msg.sender].amount == 0, "You have a savings account already!");
+        _;
+    }
+
+    modifier canWithdrawAmount(uint withdrawalAmount) {
+        //Savings account can not have zero-balance   
+        withdrawalAmount = withdrawalAmount;     
+        uint amount = savingsAccountHolders[msg.sender].amount;
+        uint amountOfInterest = amount - minSavingsBalance;
+        uint timeInDays = (block.timestamp - savingsAccountHolders[msg.sender].time) / 86400;
+        uint totalAmount = amount + (amountOfInterest * savingsInterestPerAnnum * timeInDays) / 36500;
+
+        require(totalAmount - withdrawalAmount >= minSavingsBalance, "Account balance will fall below minimum balance!");
+        _;
+    }
+
+    modifier alreadyHaveAccountSavings() {
+        //Only one savings account at a time
+        require(savingsAccountHolders[msg.sender].amount >= minSavingsBalance, "You do not have a savings account with us!");
+        _;
+    }
+
+    //Chequing account    
+    modifier canOpenChequingWithBal() {
+        //Chequing account can not have zero-balance
+        require(msg.value >= minChequingBalance, "You do not have minimum funds to open account!");
+        _;
+    }
+
+    modifier chequingDuplicate() {
+        //Only one chequing account at a time
+        require(chequingAccountHolders[msg.sender].time == 0, "You have a chequing account already!");
+        _;
+    }
+
+    modifier canWithdrawFromChequing(uint withdrawalAmount) {
+        //Chequing account can not have zero-balance             
+        uint amount = chequingAccountHolders[msg.sender].amount;        
+        uint time = chequingAccountHolders[msg.sender].time;
+        uint timeInMonths = (block.timestamp - chequingAccountHolders[msg.sender].time) / (30 * 86400);            
+        uint chequingBalance = amount - (timeInMonths * monthlyServiceCharge);
+        require(chequingBalance - withdrawalAmount >= minChequingBalance, "Account balance will be overdrawn!");
+        _;
+    }
+
+    modifier alreadyHaveAccountChequing() {
+        //Only one chequing account at a time
+        require(chequingAccountHolders[msg.sender].time > 0, "You do not have a chequing account with us!");
+        _;
+    }
+
+    modifier isLoanServiced() {
+        //Chequing account can not be closed if loan is still being serviced
+        require(loanReceivers[msg.sender].amount == 0, "Loan is still being serviced!");
+        _;
+    }
+
+    //Loan
+    modifier canTakeLoan() {
+        //Check if user is currently servicing existing loan
+        require(loanReceivers[msg.sender].amount == 0, "You can only take a loan at a time!");
+        _;
+    }
+
+    modifier isLoanActive() {
+        //Check if user has loan
+        require(loanReceivers[msg.sender].amount > 0, "You do not have any loan to service!");
+        _;
+    }
+
+    modifier CreditRating(uint loanAmount) {
+        //Check if user qualifies for loan amount         
+        uint amount = chequingAccountHolders[msg.sender].amount;        
+        uint time = chequingAccountHolders[msg.sender].time;
+        uint timeInMonths = (block.timestamp - chequingAccountHolders[msg.sender].time) / (30 * 86400);            
+        uint chequingBalance = amount - (timeInMonths * monthlyServiceCharge);
+        uint availableCredit = 0;
+
+        if (chequingBalance > 0) {            
+            availableCredit = chequingBalance * 2 / 3;    
+        } 
+
+        require(availableCredit >= loanAmount, "You do not qualify for such credit!");
+        _;
+    }
+
+    modifier isLoanDue() {
+        //Check if loan is due for repayment
+        uint loanDays = (block.timestamp - loanReceivers[msg.sender].time) / 86400;
+        require(loanDays >= loanReceivers[msg.sender].maturity, "Loan is yet to reach maturity date!");
+        _;
+    }
+
+    modifier isDefaulter() {
+        //Check if user has defaulted on loan repayment
+        require(defaulters[msg.sender] == 0, "You have defaulted on your repayment! Pay as soon as you can.");
+        _;
+    }
+
+    //Savings Account Details
+    function openSavingsAccount() public payable savingsDuplicate canOpenSavingsWithBal {
+        uint amount = msg.value;
+        msg.sender.transfer(amount);
+        savingsAccountHolders[msg.sender] = Account(amount, block.timestamp);
+    }
+
+    function withdrawFromSavings(uint withdrawalAmount) public payable alreadyHaveAccountSavings canWithdrawAmount(withdrawalAmount) {        
+        uint amount = savingsAccountHolders[msg.sender].amount;
+        uint amountOfInterest = amount - minSavingsBalance;
+        uint timeInDays = (block.timestamp - savingsAccountHolders[msg.sender].time) / 86400;
+        uint totalAmount = amount + (amountOfInterest * savingsInterestPerAnnum * timeInDays) / 36500;
+        savingsAccountHolders[msg.sender] = Account(totalAmount - withdrawalAmount, block.timestamp);
+        address(this).transfer(withdrawalAmount);
+    }
+
+    function depositIntoSavings() public payable alreadyHaveAccountSavings {        
+        uint deposit = msg.value;
+        msg.sender.transfer(deposit);
+        uint newAmount = savingsAccountHolders[msg.sender].amount + deposit;
+        savingsAccountHolders[msg.sender] = Account(newAmount, block.timestamp);
+    }
+
+    function getSavingsBalance() public view alreadyHaveAccountSavings returns (uint totalAmount) {
+        uint amount = savingsAccountHolders[msg.sender].amount;
+        uint amountOfInterest = amount - minSavingsBalance;
+        uint timeInDays = (block.timestamp - savingsAccountHolders[msg.sender].time) / 86400;
+        totalAmount = amount + (amountOfInterest * savingsInterestPerAnnum * timeInDays) / 36500;
+    }
+
+    function closeSavings() public payable alreadyHaveAccountSavings isLoanServiced {
+        uint amount = savingsAccountHolders[msg.sender].amount;
+        uint amountOfInterest = amount - minSavingsBalance;
+        uint timeInDays = (block.timestamp - savingsAccountHolders[msg.sender].time) / 86400;
+        uint totalAmount = amount + (amountOfInterest * savingsInterestPerAnnum * timeInDays) / 36500;   
+        address(this).transfer(totalAmount);
+        delete savingsAccountHolders[msg.sender];
+    }
+    
+    //Chequing Account Details
+    function openChequingAccount() public payable chequingDuplicate canOpenChequingWithBal {
+        uint amount = msg.value;
+        msg.sender.transfer(amount);
+        chequingAccountHolders[msg.sender] = Account(amount, block.timestamp);
+    }
+
+    function withdrawFromChequing(uint withdrawalAmount) public payable alreadyHaveAccountChequing canWithdrawFromChequing(withdrawalAmount) {
+        uint amount = chequingAccountHolders[msg.sender].amount;                
+        uint timeInMonths = (block.timestamp - chequingAccountHolders[msg.sender].time) / (30 * 86400);            
+        uint balance = amount - (timeInMonths * monthlyServiceCharge)  - minChequingBalance;
+
+        chequingAccountHolders[msg.sender] = Account(balance - withdrawalAmount, block.timestamp);
+        address(this).transfer(withdrawalAmount);        
+    }
+
+    function depositIntoChequing() public payable alreadyHaveAccountChequing {        
+        uint deposit = msg.value;
+        msg.sender.transfer(deposit);
+        uint newAmount = chequingAccountHolders[msg.sender].amount + deposit;
+        chequingAccountHolders[msg.sender] = Account(newAmount, block.timestamp);
+    }
+
+    function getChequingBalance() public view alreadyHaveAccountChequing returns (uint balance) {
+        uint amount = chequingAccountHolders[msg.sender].amount;                
+        uint timeInMonths = (block.timestamp - chequingAccountHolders[msg.sender].time) / (30 * 86400);            
+        balance = amount - (timeInMonths * monthlyServiceCharge);            
+    }
+
+    function closeChequingAccount() public payable alreadyHaveAccountChequing isLoanServiced {
+        uint amount = chequingAccountHolders[msg.sender].amount;                
+        uint timeInMonths = (block.timestamp - chequingAccountHolders[msg.sender].time) / (30 * 86400);            
+        uint totalCharges = timeInMonths * monthlyServiceCharge;        
+        address(this).transfer(amount - totalCharges);
+
+        delete chequingAccountHolders[msg.sender];
+    }
+
+    //Loan Details
+    function takeALoan(uint loanAmount, uint durationInDays) public payable alreadyHaveAccountChequing canTakeLoan CreditRating(loanAmount) {
+        //credit chequing account
+        uint newAmount = chequingAccountHolders[msg.sender].amount + loanAmount;
+        uint time = chequingAccountHolders[msg.sender].time;
+        chequingAccountHolders[msg.sender] = Account(newAmount, time);
+
+        //open loan account
+        uint totalLoanAmount = loanAmount + (loanAmount * loanInterestPerAnnum * durationInDays / 36500);
+        loanReceivers[msg.sender] = Loan(totalLoanAmount, block.timestamp, durationInDays);
+    }
+
+    function loanRepayment() public alreadyHaveAccountChequing isLoanActive isLoanDue {
+        uint amount = chequingAccountHolders[msg.sender].amount;                
+        uint timeInMonths = (block.timestamp - chequingAccountHolders[msg.sender].time) / (30 * 86400);            
+        uint chequingBalance = amount - (timeInMonths * monthlyServiceCharge);        
+        uint debt = loanReceivers[msg.sender].amount;
+        uint chequingTime = chequingAccountHolders[msg.sender].time;
+        uint chequingAmount = chequingAccountHolders[msg.sender].amount;
+
+        if (chequingBalance >= debt) {                        
+            chequingAccountHolders[msg.sender] = Account(chequingAmount - debt, chequingTime);
+            delete loanReceivers[msg.sender];
+            if (defaulters[msg.sender] > 0) {
+                delete defaulters[msg.sender];
+            }
+
+        } else {
+            uint loanTime = loanReceivers[msg.sender].time;
+            uint maturity = loanReceivers[msg.sender].maturity;
+            uint defaultTime = (block.timestamp - loanTime) / 86400;
+            if (defaultTime >= maturity + defaultDeadline) {
+                //liquidate accounts
+                uint savingsAmount = savingsAccountHolders[msg.sender].amount;
+                uint savingsTime = savingsAccountHolders[msg.sender].time;                
+                uint defaultDays = defaultTime - maturity - defaultDeadline;
+                uint newDebtAmount = debt + (debt * loanInterestPerAnnum * (defaultDays) / 36500);
+
+                //Start with savings account if it exists
+                if (savingsAmount >= newDebtAmount) { 
+                    savingsAccountHolders[msg.sender] = Account(savingsAmount - newDebtAmount, savingsTime);
+                    delete loanReceivers[msg.sender];
+                    if (defaulters[msg.sender] > 0) {
+                        delete defaulters[msg.sender];
+                    }
+
+                } else {
+                    if (savingsTime > 0) { 
+                        savingsAccountHolders[msg.sender] = Account(0, savingsTime);
+                    }
+                    uint debtRemaining = newDebtAmount - savingsAmount;
+                    loanReceivers[msg.sender] = Loan(debtRemaining, loanTime, maturity);
+
+                    if (chequingBalance >= debtRemaining) { 
+                        chequingAccountHolders[msg.sender] = Account(chequingAmount - debtRemaining, chequingTime);
+                        delete loanReceivers[msg.sender];
+                        if (defaulters[msg.sender] > 0) {
+                            delete defaulters[msg.sender];
+                        }
+
+                    } else {
+                        defaulters[msg.sender] = debtRemaining - chequingBalance;
+                        chequingAccountHolders[msg.sender] = Account(chequingAmount - chequingBalance, chequingTime);
+                        loanReceivers[msg.sender] = Loan(debtRemaining - chequingBalance, loanTime, maturity);
+                    }
+                }                
+
+            } else {                
+                chequingAccountHolders[msg.sender] = Account(chequingAmount - chequingBalance, chequingTime);
+                loanReceivers[msg.sender] = Loan(debt - chequingBalance, loanTime, maturity);
+            }            
+        }
+    }
+
+    function getAvailableCredit() public view alreadyHaveAccountChequing canTakeLoan returns (uint availableCredit) {
+        uint amount = chequingAccountHolders[msg.sender].amount;                
+        uint timeInMonths = (block.timestamp - chequingAccountHolders[msg.sender].time) / (30 * 86400);            
+        uint balance = amount - (timeInMonths * monthlyServiceCharge);        
+        if (balance < 0) {
+            availableCredit = 0;
+        } else {
+            availableCredit = balance * 2 / 3;    
+        }
+    }
+
+    function getDaysToPayment() public view alreadyHaveAccountChequing isLoanActive isDefaulter returns (uint daysLeft) {        
+        daysLeft = loanReceivers[msg.sender].maturity - ((block.timestamp - loanReceivers[msg.sender].time) / 86400);        
+    }
+}
