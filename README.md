@@ -22,4 +22,12 @@ This contract allows multiple EOAs to bid for a house based on certain rules:
 * Daily interest is paid on money owed for defaulting users.
 * Defaulting users can not use service unless all outstanding debt paid.
 
+### Example3 - Banking Service
+
+* There are two types of account: savings and chequing
+* Users can have only one of each at a time. 
+* To qualify for a loan, the user must have a chequing account.
+* Users can only take a loan at a time.
+* Loan repayment is done via chequing account.
+* All accounts are liquidated when user defaults.
 
